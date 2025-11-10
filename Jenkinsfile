@@ -72,28 +72,30 @@ pipeline {
 		// Étape 4 : Déployer sur Kubernetes
 		// ======================================================
 		stage('Deploy to Kubernetes') {
+			// On n'a pas besoin de 'dir' ou 'unstash' ici
 			steps {
-				// On récupère uniquement le dossier k8s du backend (qui devrait être complet)
-				dir('deploy-workspace') {
-					unstash 'backend-app'
-					script {
-						def imageTag = "v1.${BUILD_NUMBER}"
-						withCredentials([string(credentialsId: KUBERNETES_TOKEN_CREDENTIAL_ID, variable: 'KUBERNETES_TOKEN')]) {
-							sh '''
-                                kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
-                                kubectl config set-credentials jenkins-agent --token=${KUBERNETES_TOKEN}
-                                kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
-                                kubectl config use-context jenkins-context
+				script {
+					def imageTag = "v1.${BUILD_NUMBER}"
+					withCredentials([string(credentialsId: KUBERNETES_TOKEN_CREDENTIAL_ID, variable: 'KUBERNETES_TOKEN')]) {
+						sh '''
+                            kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
+                            kubectl config set-credentials jenkins-agent --token=${KUBERNETES_TOKEN}
+                            kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
+                            kubectl config use-context jenkins-context
 
-                                kubectl apply -f k8s/
+                            # --- CORRECTION ICI ---
+                            # On applique tous les fichiers du dossier k8s qui a été cloné
+                            # avec le Jenkinsfile au début du pipeline.
+                            kubectl apply -f k8s/
 
-                                kubectl set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}
-                                kubectl set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}
+                            # On met à jour les images des deux déploiements
+                            kubectl set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}
+                            kubectl set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}
 
-                                kubectl rollout status deployment/backend-deployment
-                                kubectl rollout status deployment/frontend-deployment
-                            '''
-						}
+                            # On attend que les deux déploiements soient terminés
+                            kubectl rollout status deployment/backend-deployment
+                            kubectl rollout status deployment/frontend-deployment
+                        '''
 					}
 				}
 			}
