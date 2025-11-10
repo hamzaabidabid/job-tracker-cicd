@@ -16,17 +16,13 @@ pipeline {
 		stage('Build Backend') {
 			agent {
 				docker {
-					image 'maven:3.8.5-openjdk-17'
+					image 'maven:3.8.5-amazoncorretto-17'
 					args '-v $HOME/.m2:/root/.m2'
 				}
 			}
 			steps {
-				echo "--- Building Backend ---"
-				// On clone le dépôt du backend
 				git 'https://github.com/hamzaabidabid/job-tracker-backend.git'
-				// On exécute le build Maven
 				sh 'mvn clean package -DskipTests'
-				// On archive les fichiers nécessaires pour la prochaine étape
 				stash name: 'backend-app', includes: 'target/job_tracker-0.0.1-SNAPSHOT.jar, Dockerfile, k8s/'
 			}
 		}
