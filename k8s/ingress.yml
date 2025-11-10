@@ -1,0 +1,30 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: job-tracker-ingress
+  annotations:
+    # Cette annotation est souvent nécessaire pour que Nginx Ingress fonctionne correctement
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    - http:
+        paths:
+          # Règle N°1 : Le Backend
+          # Si l'URL commence par /api, envoie la requête au backend.
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service # Le nom du service de votre backend
+                port:
+                  number: 8082
+
+          # Règle N°2 : Le Frontend
+          # Si l'URL commence par / (c'est-à-dire pour tout le reste), envoie la requête au frontend.
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service # Le nom du service de votre frontend
+                port:
+                  number: 80
