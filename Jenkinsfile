@@ -80,37 +80,33 @@ pipeline {
 		// ======================================================
 		stage('Deploy to Kubernetes') {
 			steps {
-				// On clone le dépôt qui contient les fichiers k8s
-				git 'https://github.com/hamzaabidabid/job-tracker-cicd.git'
-
+				// ... (git clone)
 				script {
 					def imageTag = "v1.${BUILD_NUMBER}"
-
-					// On utilise le credential du token
 					withCredentials([string(credentialsId: KUBERNETES_TOKEN_CREDENTIAL_ID, variable: 'KUBERNETES_TOKEN')]) {
-						// On utilise les triples guillemets doubles pour l'interpolation
 						sh """
-                            echo "--- Configuring kubectl ---"
-                            # On configure kubectl à la volée en utilisant le token
-                            kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
-                            kubectl config set-credentials jenkins-agent --token=${KUBERNETES_TOKEN}
-                            kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
-                            kubectl config use-context jenkins-context
+                    echo "--- Configuring kubectl ---"
+                    kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
+                    kubectl config set-credentials jenkins-agent --token=${KUBERNETES_TOKEN}
+                    kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
 
-                            echo "--- Applying all manifests ---"
-                            kubectl apply -f k8s/
+                    # On ne fait plus 'use-context' ici
 
-                            echo "--- Waiting for Database ---"
-                            kubectl rollout status statefulset/postgres-db --timeout=5m
+                    echo "--- Applying all manifests ---"
+                    # --- CORRECTION ICI : On spécifie le contexte sur chaque commande ---
+                    kubectl --context=jenkins-context apply -f k8s/
 
-                            echo "--- Updating images ---"
-                            kubectl set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}
-                            kubectl set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}
+                    echo "--- Waiting for Database ---"
+                    kubectl --context=jenkins-context rollout status statefulset/postgres-db --timeout=5m
 
-                            echo "--- Waiting for deployments ---"
-                            kubectl rollout status deployment/backend-deployment --timeout=5m
-                            kubectl rollout status deployment/frontend-deployment --timeout=5m
-                        """
+                    echo "--- Updating images ---"
+                    kubectl --context=jenkins-context set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}
+                    kubectl --context=jenkins-context set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}
+
+                    echo "--- Waiting for deployments ---"
+                    kubectl --context=jenkins-context rollout status deployment/backend-deployment --timeout=5m
+                    kubectl --context=jenkins-context rollout status deployment/frontend-deployment --timeout=5m
+                """
 					}
 				}
 			}
