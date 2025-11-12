@@ -80,34 +80,34 @@ pipeline {
 		// ======================================================
 		stage('Deploy to Kubernetes') {
 			steps {
-				// ... (git clone)
 				script {
 					def imageTag = "v1.${BUILD_NUMBER}"
 					withCredentials([string(credentialsId: KUBERNETES_TOKEN_CREDENTIAL_ID, variable: 'KUBERNETES_TOKEN')]) {
 						sh '''
-        echo "--- Configuring kubectl ---"
-        kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
-        kubectl config set-credentials jenkins-agent --token=$KUBERNETES_TOKEN
-        kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
-        kubectl config use-context jenkins-context
+                    echo "--- Configuring kubectl ---"
+                    kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
+                    kubectl config set-credentials jenkins-agent --token=$KUBERNETES_TOKEN
+                    kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
+                    kubectl config use-context jenkins-context
 
-        echo "--- Applying all manifests ---"
-        kubectl apply -f k8s/ --validate=false
+                    echo "--- Applying all manifests ---"
+                    kubectl apply -f k8s/ --validate=false
 
-        echo "--- Waiting for Database ---"
-        kubectl rollout status statefulset/postgres-db --timeout=5m
+                    echo "--- Waiting for Database ---"
+                    kubectl rollout status statefulset/postgres-db --timeout=5m
 
-        echo "--- Updating images ---"
-        kubectl set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}
-        kubectl set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}
+                    echo "--- Updating images ---"
+                    kubectl set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}
+                    kubectl set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}
 
-        echo "--- Waiting for deployments ---"
-        kubectl rollout status deployment/backend-deployment --timeout=5m
-        kubectl rollout status deployment/frontend-deployment --timeout=5m
-    '''
+                    echo "--- Waiting for deployments ---"
+                    kubectl rollout status deployment/backend-deployment --timeout=5m
+                    kubectl rollout status deployment/frontend-deployment --timeout=5m
+                '''
 					}
 				}
 			}
 		}
+
 	}
 }
