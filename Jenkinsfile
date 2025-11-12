@@ -83,7 +83,7 @@ pipeline {
 				script {
 					def imageTag = "v1.${BUILD_NUMBER}"
 					withCredentials([string(credentialsId: KUBERNETES_TOKEN_CREDENTIAL_ID, variable: 'KUBERNETES_TOKEN')]) {
-						sh '''
+						sh """
                     echo "--- Configuring kubectl ---"
                     kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
                     kubectl config set-credentials jenkins-agent --token=$KUBERNETES_TOKEN
@@ -103,7 +103,7 @@ pipeline {
                     echo "--- Waiting for deployments ---"
                     kubectl rollout status deployment/backend-deployment --timeout=5m
                     kubectl rollout status deployment/frontend-deployment --timeout=5m
-                '''
+                """
 					}
 				}
 			}
