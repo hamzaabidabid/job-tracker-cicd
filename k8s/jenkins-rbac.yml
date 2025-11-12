@@ -1,0 +1,46 @@
+# jenkins-rbac.yml
+
+# 1. Le ServiceAccount (l'identité que Jenkins utilisera)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins-agent
+  namespace: default
+
+---
+
+# 2. Le Role (la liste des permissions)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: jenkins-role
+  namespace: default
+rules:
+  - apiGroups: ["", "apps", "networking.k8s.io", "batch"]
+    resources:
+      - deployments
+      - services
+      - statefulsets
+      - secrets
+      - ingresses
+      - persistentvolumeclaims
+      - pods
+      - configmaps
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+
+---
+
+# 3. Le RoleBinding (le lien entre le ServiceAccount et le Role)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jenkins-role-binding
+  namespace: default
+subjects:
+  - kind: ServiceAccount
+    name: jenkins-agent
+    namespace: default
+roleRef:
+  kind: Role
+  name: jenkins-role
+  apiGroup: rbac.authorization.k8s.io
