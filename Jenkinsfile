@@ -5,63 +5,30 @@ pipeline {
 		DOCKER_REGISTRY = 'abidhamza'
 		BACKEND_IMAGE_NAME = "${DOCKER_REGISTRY}/job-tracker-backend"
 		FRONTEND_IMAGE_NAME = "${DOCKER_REGISTRY}/job-tracker-frontend"
-		KUBERNETES_SERVER_URL = 'https://192.168.49.2:8443'
-		KUBERNETES_TOKEN_CREDENTIAL_ID = 'kubernetes-token'
 	}
 
 	stages {
 		// ======================================================
-		// Étape 1 : Construire le Backend
+		// Étape 1 : Build & Push Backend
 		// ======================================================
-		stage('Build Backend') {
-			agent {
-				docker {
-					image 'maven:3.8.5-amazoncorretto-17'
-					args '-v $HOME/.m2:/root/.m2'
-				}
-			}
+		stage('Build & Push Backend') {
 			steps {
-				git 'https://github.com/hamzaabidabid/job-tracker-backend.git'
-				sh 'mvn clean package -DskipTests'
-				stash name: 'backend-app', includes: 'target/job_tracker-0.0.1-SNAPSHOT.jar, Dockerfile, k8s/'
-			}
-		}
+				echo "--- Building & Pushing Backend ---"
+				// On clone le dépôt dans un sous-dossier pour l'isoler
+				dir('backend') {
+					git 'https://github.com/hamzaabidabid/job-tracker-backend.git'
 
-		// ======================================================
-		// Étape 2 : Construire le Frontend
-		// ======================================================
-		stage('Build Frontend') {
-			agent {
-				docker {
-					image 'node:18-alpine'
-				}
-			}
-			steps {
-				echo "--- Building Frontend ---"
-				git 'https://github.com/hamzaabidabid/job-tracker-frontend.git'
-				sh 'npm install'
-				sh 'npm run build'
-				stash name: 'frontend-app', includes: 'dist/**, Dockerfile, nginx.conf, k8s/'
-			}
-		}
+					// On utilise un agent Docker pour Maven
+					docker.image('maven:3.8.5-amazoncorretto-17').inside('-v $HOME/.m2:/root/.m2') {
+						sh 'mvn clean package -DskipTests'
+					}
 
-		// ======================================================
-		// Étape 3 : Construire et Pousser les Images Docker
-		// ======================================================
-		stage('Build and Push Images') {
-			steps {
-				script {
-					def imageTag = "v1.${BUILD_NUMBER}"
-					docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
-						// Build et push du backend
-						dir('backend-workspace') {
-							unstash 'backend-app'
-							docker.build("${BACKEND_IMAGE_NAME}:${imageTag}", '.').push()
-						}
-						// Build et push du frontend
-						dir('frontend-workspace') {
-							unstash 'frontend-app'
-							docker.build("${FRONTEND_IMAGE_NAME}:${imageTag}", '.').push()
+					// On construit et on pousse l'image
+					script {
+						def imageTag = "v1.${BUILD_NUMBER}"
+						def dockerImage = docker.build("${BACKEND_IMAGE_NAME}:${imageTag}", '.')
+						docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
+							dockerImage.push()
 						}
 					}
 				}
@@ -69,33 +36,54 @@ pipeline {
 		}
 
 		// ======================================================
-		// Étape 4 : Déployer sur Kubernetes
+		// Étape 2 : Build & Push Frontend
+		// ======================================================
+		stage('Build & Push Frontend') {
+			steps {
+				echo "--- Building & Pushing Frontend ---"
+				dir('frontend') {
+					git 'https://github.com/hamzaabidabid/job-tracker-frontend.git'
+
+					docker.image('node:18-alpine').inside {
+						sh 'npm install'
+						sh 'npm run build'
+					}
+
+					script {
+						def imageTag = "v1.${BUILD_NUMBER}"
+						def dockerImage = docker.build("${FRONTEND_IMAGE_NAME}:${imageTag}", '.')
+						docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
+							dockerImage.push()
+						}
+					}
+				}
+			}
+		}
+
+		// ======================================================
+		// Étape 3 : Déployer sur Kubernetes
 		// ======================================================
 		stage('Deploy to Kubernetes') {
-			// On n'a pas besoin de 'dir' ou 'unstash' ici
 			steps {
 				script {
 					def imageTag = "v1.${BUILD_NUMBER}"
-					withCredentials([string(credentialsId: KUBERNETES_TOKEN_CREDENTIAL_ID, variable: 'KUBERNETES_TOKEN')]) {
-						sh '''
-                            kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
-                            kubectl config set-credentials jenkins-agent --token=${KUBERNETES_TOKEN}
-                            kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
-                            kubectl config use-context jenkins-context
+					withKubeConfig([credentialsId: 'kubeconfig-credentials']) {
 
-                            # --- CORRECTION ICI ---
-                            # On applique tous les fichiers du dossier k8s qui a été cloné
-                            # avec le Jenkinsfile au début du pipeline.
-                            kubectl apply -f k8s/
+						echo "--- Applying all manifests ---"
+						// On clone ce dépôt (cicd) pour avoir les fichiers k8s
+						git 'https://github.com/hamzaabidabid/job-tracker-cicd.git'
+						sh "kubectl apply -f k8s/"
 
-                            # On met à jour les images des deux déploiements
-                            kubectl set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}
-                            kubectl set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}
+						echo "--- Waiting for Database ---"
+						sh "kubectl rollout status statefulset/postgres-db --timeout=5m"
 
-                            # On attend que les deux déploiements soient terminés
-                            kubectl rollout status deployment/backend-deployment
-                            kubectl rollout status deployment/frontend-deployment
-                        '''
+						echo "--- Updating images ---"
+						sh "kubectl set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}"
+						sh "kubectl set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}"
+
+						echo "--- Waiting for deployments ---"
+						sh "kubectl rollout status deployment/backend-deployment --timeout=5m"
+						sh "kubectl rollout status deployment/frontend-deployment --timeout=5m"
 					}
 				}
 			}
