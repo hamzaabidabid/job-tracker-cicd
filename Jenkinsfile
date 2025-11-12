@@ -76,13 +76,16 @@ pipeline {
 		// ======================================================
 		stage('Deploy to Kubernetes') {
 			steps {
+				// On clone le dépôt qui contient les fichiers k8s
+				git 'https://github.com/hamzaabidabid/job-tracker-cicd.git'
+
 				script {
 					def imageTag = "v1.${BUILD_NUMBER}"
+
+					// On utilise le plugin Kubernetes CLI pour s'authentifier
 					withKubeConfig([credentialsId: 'kubeconfig-credentials']) {
 
 						echo "--- Applying all manifests ---"
-						// On clone ce dépôt (cicd) pour avoir les fichiers k8s
-						git 'https://github.com/hamzaabidabid/job-tracker-cicd.git'
 						sh "kubectl apply -f k8s/"
 
 						echo "--- Waiting for Database ---"
