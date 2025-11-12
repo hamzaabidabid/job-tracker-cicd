@@ -8,80 +8,69 @@ pipeline {
 	}
 
 	stages {
-		// ======================================================
-		// Étape 1 : Build & Push Backend
-		// ======================================================
-		stage('Build & Push Backend') {
+		// ... (Les étapes 'Build Backend', 'Build Frontend', 'Build and Push Images' ne changent pas) ...
+		stage('Build Backend') {
+			agent { docker { image 'maven:3.8.5-amazoncorretto-17' } }
 			steps {
-				echo "--- Building & Pushing Backend ---"
-				// On clone le dépôt dans un sous-dossier pour l'isoler
-				dir('backend') {
-					git 'https://github.com/hamzaabidabid/job-tracker-backend.git'
-
-					// On utilise un agent Docker pour Maven
-					docker.image('maven:3.8.5-amazoncorretto-17').inside('-v $HOME/.m2:/root/.m2') {
-						sh 'mvn clean package -DskipTests'
-					}
-
-					// On construit et on pousse l'image
-					script {
-						def imageTag = "v1.${BUILD_NUMBER}"
-						def dockerImage = docker.build("${BACKEND_IMAGE_NAME}:${imageTag}", '.')
-						docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
-							dockerImage.push()
-						}
-					}
-				}
+				git 'https://github.com/hamzaabidabid/job-tracker-backend.git'
+				sh 'mvn clean package -DskipTests'
+				stash name: 'backend-app', includes: 'target/job_tracker-0.0.1-SNAPSHOT.jar, Dockerfile, k8s/'
 			}
 		}
-
-		// ======================================================
-		// Étape 2 : Build & Push Frontend
-		// ======================================================
-		stage('Build & Push Frontend') {
+		stage('Build Frontend') {
+			agent { docker { image 'node:18-alpine' } }
 			steps {
-				echo "--- Building & Pushing Frontend ---"
-				dir('frontend') {
-					git 'https://github.com/hamzaabidabid/job-tracker-frontend.git'
-
-					docker.image('node:18-alpine').inside {
-						sh 'npm install'
-						sh 'npm run build'
-					}
-
-					script {
-						def imageTag = "v1.${BUILD_NUMBER}"
-						def dockerImage = docker.build("${FRONTEND_IMAGE_NAME}:${imageTag}", '.')
-						docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
-							dockerImage.push()
-						}
-					}
-				}
+				git 'https://github.com/hamzaabidabid/job-tracker-frontend.git'
+				sh 'npm install'
+				sh 'npm run build'
+				stash name: 'frontend-app', includes: 'dist/**, Dockerfile, nginx.conf, k8s/'
 			}
 		}
-
-		// ======================================================
-		// Étape 3 : Déployer sur Kubernetes
-		// ======================================================
-		stage('Deploy to Kubernetes') {
+		stage('Build and Push Images') {
 			steps {
 				script {
 					def imageTag = "v1.${BUILD_NUMBER}"
+					docker.withRegistry('https://registry.hub.docker.com', 'dockerhub-credentials') {
+						dir('backend-workspace') {
+							unstash 'backend-app'
+							docker.build("${BACKEND_IMAGE_NAME}:${imageTag}", '.').push()
+						}
+						dir('frontend-workspace') {
+							unstash 'frontend-app'
+							docker.build("${FRONTEND_IMAGE_NAME}:${imageTag}", '.').push()
+						}
+					}
+				}
+			}
+		}
+
+		// ======================================================
+		// Étape 4 : Déployer sur Kubernetes (NOUVELLE VERSION PROPRE)
+		// ======================================================
+		stage('Deploy to Kubernetes') {
+			steps {
+				// On récupère le dossier k8s qui contient nos manifestes
+				unstash 'backend-app'
+
+				script {
+					def imageTag = "v1.${BUILD_NUMBER}"
+
+					// On utilise le plugin Kubernetes CLI. C'est la méthode recommandée.
+					// Il lit le credential 'kubeconfig-credentials' (qui doit être de type Secret File ou Secret Text).
 					withKubeConfig([credentialsId: 'kubeconfig-credentials']) {
 
 						echo "--- Applying all manifests ---"
-						// On clone ce dépôt (cicd) pour avoir les fichiers k8s
-						git 'https://github.com/hamzaabidabid/job-tracker-cicd.git'
 						sh "kubectl apply -f k8s/"
 
-						echo "--- Waiting for Database ---"
+						echo "--- Waiting for Database to be ready ---"
 						sh "kubectl rollout status statefulset/postgres-db --timeout=5m"
 
 						echo "--- Updating images ---"
+						// Les variables fonctionnent parfaitement dans des commandes 'sh' simples.
 						sh "kubectl set image deployment/backend-deployment backend-app=${BACKEND_IMAGE_NAME}:${imageTag}"
 						sh "kubectl set image deployment/frontend-deployment frontend-app=${FRONTEND_IMAGE_NAME}:${imageTag}"
 
-						echo "--- Waiting for deployments ---"
+						echo "--- Waiting for application deployments to complete ---"
 						sh "kubectl rollout status deployment/backend-deployment --timeout=5m"
 						sh "kubectl rollout status deployment/frontend-deployment --timeout=5m"
 					}
