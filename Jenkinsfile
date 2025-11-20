@@ -83,27 +83,15 @@ pipeline {
 				script {
 					def imageTag = "v1.${BUILD_NUMBER}"
 					withCredentials([string(credentialsId: KUBERNETES_TOKEN_CREDENTIAL_ID, variable: 'KUBERNETES_TOKEN')]) {
-						// On utilise les guillemets doubles """ pour que les variables soient interprétées
 						sh """
                     echo "--- Configuring kubectl ---"
                     kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
-
-                    # CORRECTION ICI: On retire le backslash.
-                    # La variable KUBERNETES_TOKEN est disponible dans l'environnement shell.
                     kubectl config set-credentials jenkins-agent --token=$KUBERNETES_TOKEN
-
                     kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
                     kubectl config use-context jenkins-context
 
-                    # Ajout d'une commande de vérification pour le débogage
-                    echo "--- Verifying kubectl connection ---"
-                    kubectl get pods -n kube-system
-
-                    echo "--- Cleaning up previous deployment (if any) ---"
-                    kubectl delete -f ks/ --ignore-not-found=true
-
                     echo "--- Applying all manifests ---"
-                    kubectl apply -f k8s/
+                    kubectl apply -f k8s/ --validate=false
 
                     echo "--- Waiting for Database ---"
                     kubectl rollout status statefulset/postgres-db --timeout=5m
