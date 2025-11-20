@@ -83,14 +83,22 @@ pipeline {
 				script {
 					def imageTag = "v1.${BUILD_NUMBER}"
 					withCredentials([string(credentialsId: KUBERNETES_TOKEN_CREDENTIAL_ID, variable: 'KUBERNETES_TOKEN')]) {
+						// Utilisez des guillemets simples ''' pour éviter l'interpolation Groovy
+						// Ou échappez le $ avec \ si vous utilisez """
 						sh """
+                    set +x # Masquer les commandes suivantes pour ne pas afficher le token dans les logs
                     echo "--- Configuring kubectl ---"
                     kubectl config set-cluster minikube --server=${KUBERNETES_SERVER_URL} --insecure-skip-tls-verify=true
-                    kubectl config set-credentials jenkins-agent --token=$KUBERNETES_TOKEN
+
+
+                    kubectl config set-credentials jenkins-agent --token=\$KUBERNETES_TOKEN
+
                     kubectl config set-context jenkins-context --cluster=minikube --user=jenkins-agent
                     kubectl config use-context jenkins-context
+                    set -x # Réactiver l'affichage des logs
 
                     echo "--- Applying all manifests ---"
+
                     kubectl apply -f k8s/ --validate=false
 
                     echo "--- Waiting for Database ---"
