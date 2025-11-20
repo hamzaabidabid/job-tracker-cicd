@@ -1,0 +1,162 @@
+# ======================================================
+#  Secrets pour la base de données
+# ======================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+type: Opaque
+stringData:
+  POSTGRES_DB: job_tracker
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: emsi
+
+--- # Séparateur entre les objets Kubernetes
+
+# ======================================================
+#  Demande de stockage persistant pour la BDD (MANQUANT, AJOUTÉ)
+# ======================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce # Important pour une base de données
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+
+# ======================================================
+#  Service pour la base de données (adresse réseau)
+# ======================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-db
+spec:
+  ports:
+    - port: 5432
+  selector:
+    app: postgres
+
+---
+
+# ======================================================
+#  Déploiement de la base de données PostgreSQL
+# ======================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-db
+spec:
+  # CORRECTION : Une base de données standard ne peut pas avoir 3 réplicas sans configuration de clustering complexe.
+  # Pour une base de données simple, on utilise TOUJOURS 1 réplica.
+  replicas: 1
+  serviceName: "postgres-db" # Important pour un StatefulSet
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:11-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+  # CORRECTION : La définition du volume doit être dans un 'volumeClaimTemplates' pour un StatefulSet
+  # afin que chaque réplica ait son propre volume (même si nous n'en avons qu'un).
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-storage
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi
+
+---
+
+# ======================================================
+#  Service pour le Backend
+# ======================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+spec:
+  # CORRECTION : Le service backend n'a pas besoin d'être un LoadBalancer.
+  # Il ne doit être accessible que par le frontend à l'intérieur du cluster.
+  # On utilise ClusterIP, qui est le type par défaut.
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - protocol: TCP
+      port: 8082
+      targetPort: 8082
+
+---
+
+# ======================================================
+#  Déploiement de l'application Backend Spring Boot
+# ======================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+spec:
+  # Vous pouvez commencer avec 1 réplica et augmenter plus tard si nécessaire.
+  # Mettre 3 réplicas est bien pour la haute disponibilité.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend-app
+          image: abidhamza/job-tracker-backend:v1
+          ports:
+            - containerPort: 8082
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres-db:5432/job_tracker"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            # Kubernetes attendra que cette URL réponde avant de considérer le pod comme "Ready"
+            httpGet:
+              path: /actuator/health/readiness # Nécessite Spring Boot Actuator
+              port: 8082
+            initialDelaySeconds: 30 # Attend 30 secondes avant de commencer à vérifier
+            periodSeconds: 10
+          livenessProbe:
+              # Si cette URL arrête de répondre, Kubernetes redémarrera le pod
+              httpGet:
+                path: /actuator/health/liveness # Nécessite Spring Boot Actuator
+                port: 8082
+              initialDelaySeconds: 60 # Attend 60 secondes avant de vérifier
+              periodSeconds: 15
