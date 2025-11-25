@@ -12,9 +12,7 @@ pipeline {
 	}
 
 	stages {
-		// ======================================================
-		// Étape 1 : Construire le Backend
-		// ======================================================
+
 		stage('Build Backend') {
 			// On définit un agent Docker spécifique pour CETTE étape
 			agent {
