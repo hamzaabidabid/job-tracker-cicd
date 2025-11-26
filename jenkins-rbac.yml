@@ -1,5 +1,3 @@
-# jenkins-rbac.yml
-
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -8,28 +6,34 @@ metadata:
 
 ---
 
+# On passe de "Role" à "ClusterRole" pour avoir accès à TOUS les namespaces (default + monitoring)
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: jenkins-role
-  namespace: default
+  name: jenkins-admin-role
 rules:
-  - apiGroups: ["", "apps", "networking.k8s.io", "batch"]
-    resources: ["deployments", "services", "statefulsets", "secrets", "ingresses", "persistentvolumeclaims", "pods", "configmaps"]
+  # 1. Droits standards (Apps, Services, etc.)
+  - apiGroups: ["", "apps", "networking.k8s.io", "batch", "extensions"]
+    resources: ["deployments", "services", "statefulsets", "secrets", "ingresses", "persistentvolumeclaims", "pods", "configmaps", "pods/log"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+
+  # 2. DROIT SPÉCIFIQUE MONITORING (C'est ce qui manquait !)
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors"]
     verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
 
 ---
 
+# On lie le ClusterRole au ServiceAccount Jenkins
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
-  name: jenkins-role-binding
-  namespace: default
+  name: jenkins-admin-binding
 subjects:
   - kind: ServiceAccount
     name: jenkins-agent
     namespace: default
 roleRef:
-  kind: Role
-  name: jenkins-role
+  kind: ClusterRole
+  name: jenkins-admin-role
   apiGroup: rbac.authorization.k8s.io
