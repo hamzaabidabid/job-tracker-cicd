@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: backend-monitor
+  # On le met dans le namespace monitoring pour que Prometheus le trouve vite
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      # C'est ici qu'il cherche le label qu'on a ajouté au Service
+      app: backend-app
+  namespaceSelector:
+    matchNames:
+      - default # Votre backend est dans le namespace 'default'
+  endpoints:
+    - port: http-backend # Il cherche le port nommé 'http-backend' (8082)
+      path: /actuator/prometheus
+      interval: 15s
