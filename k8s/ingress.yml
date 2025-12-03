@@ -1,30 +1,58 @@
+#apiVersion: networking.k8s.io/v1
+#kind: Ingress
+#metadata:
+#  name: job-tracker-ingress
+#  annotations:
+#    # Cette annotation est souvent nécessaire pour que Nginx Ingress fonctionne correctement
+#    nginx.ingress.kubernetes.io/rewrite-target: /
+#spec:
+#  rules:
+#    - http:
+#        paths:
+#          # Règle N°1 : Le Backend
+#          # Si l'URL commence par /api, envoie la requête au backend.
+#          - path: /api
+#            pathType: Prefix
+#            backend:
+#              service:
+#                name: backend-service # Le nom du service de votre backend
+#                port:
+#                  number: 8082
+#
+#          # Règle N°2 : Le Frontend
+#          # Si l'URL commence par / (c'est-à-dire pour tout le reste), envoie la requête au frontend.
+#          - path: /
+#            pathType: Prefix
+#            backend:
+#              service:
+#                name: frontend-service # Le nom du service de votre frontend
+#                port:
+#                  number: 80
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: job-tracker-ingress
-  annotations:
-    # Cette annotation est souvent nécessaire pour que Nginx Ingress fonctionne correctement
-    nginx.ingress.kubernetes.io/rewrite-target: /
+  # On SUPPRIME l'annotation rewrite-target pour laisser passer les chemins tels quels
 spec:
+  ingressClassName: nginx # Obligatoire sur les K8s récents
   rules:
-    - http:
+    - host: job-tracker.local # On définit le nom de domaine PRO
+      http:
         paths:
-          # Règle N°1 : Le Backend
-          # Si l'URL commence par /api, envoie la requête au backend.
+          # Règle 1 : Tout ce qui commence par /api va au Backend
           - path: /api
             pathType: Prefix
             backend:
               service:
-                name: backend-service # Le nom du service de votre backend
+                name: backend-service
                 port:
                   number: 8082
 
-          # Règle N°2 : Le Frontend
-          # Si l'URL commence par / (c'est-à-dire pour tout le reste), envoie la requête au frontend.
+          # Règle 2 : Tout le reste va au Frontend
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: frontend-service # Le nom du service de votre frontend
+                name: frontend-service
                 port:
                   number: 80
