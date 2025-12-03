@@ -1,0 +1,18 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend-deployment # Le nom de ton déploiement backend
+  minReplicas: 1   # Minimum 1 pod (la nuit quand personne n'est là)
+  maxReplicas: 5   # Maximum 5 pods (en cas de pic de trafic)
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50 # Déclenche le scale-out à 50% CPU
